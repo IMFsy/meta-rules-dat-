@@ -5,7 +5,7 @@ on:
   schedule:
     - cron: '0 2 * * *'
 
-# 全局环境变量，强制使用 Node.js 24 运行 Actions
+# 强制使用 Node.js 24 运行，确保环境领先于弃用限期
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -17,23 +17,26 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5 # 升级到 v5 以正式支持 Node.js 24
         with:
-          ref: master # 依然使用你的 master 分支
+          ref: master
 
       - name: Download and Process
         run: |
-          # 下载源文件
+          # 下载最新的源文件
           URL="https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/cn.list"
-          curl -sSL "$URL" -o temp_cn.list
+          if ! curl -sSL "$URL" -o temp_cn.list; then
+            echo "下载失败，请检查网络或 URL。"
+            exit 1
+          fi
 
-          # 提取 IPv4
+          # 执行拆分逻辑
           grep -v ":" temp_cn.list > ipv4.txt
-          # 提取 IPv6
           grep ":" temp_cn.list > ipv6.txt
 
           rm temp_cn.list
-          echo "拆分完成。"
+          echo "IPv4 地址数: $(wc -l < ipv4.txt)"
+          echo "IPv6 地址数: $(wc -l < ipv6.txt)"
 
       - name: Commit and Push
         run: |
@@ -43,8 +46,8 @@ jobs:
           git add ipv4.txt ipv6.txt
           
           if git diff --cached --quiet; then
-            echo "没有变化，跳过提交。"
+            echo "文件无变化，无需提交。"
           else
-            git commit -m "Update IP lists (Node24 Environment)"
+            git commit -m "Auto-update: Split IP lists (Node24/v5 Environment)"
             git push origin master
           fi
