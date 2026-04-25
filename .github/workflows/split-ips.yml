@@ -1,48 +1,55 @@
 name: Split CN IP List
 
 on:
-  workflow_dispatch: # 支持手动触发
+  workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *' # 每天 UTC 0点自动运行一次
+    - cron: '0 2 * * *' # 每天凌晨2点运行
 
 jobs:
   split_ips:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 赋予推送代码的权限
+      contents: write
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
         with:
-          ref: master # 使用你的 master 分支
+          ref: master # 确保推送到你的 master 分支
 
-      - name: Process IP List
+      - name: Download and Process
         run: |
-          # 定义原始文件路径（Fork 后的相对路径）
-          SOURCE_FILE="geo/geoip/cn.list"
-          
-          # 确保目录存在
-          mkdir -p output/
-          
-          # 提取 IPv4 (不含冒号的行)
-          grep -v ":" "$SOURCE_FILE" > ipv4.txt
-          
-          # 提取 IPv6 (包含冒号的行)
-          grep ":" "$SOURCE_FILE" > ipv6.txt
-          
-          echo "拆分完成：ipv4.txt 和 ipv6.txt 已生成。"
+          # 1. 远程下载最新的 cn.list（直接从原仓库 meta 分支获取）
+          URL="https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/cn.list"
+          curl -sSL "$URL" -o temp_cn.list
+
+          # 2. 检查文件是否下载成功
+          if [ ! -f temp_cn.list ]; then
+            echo "错误：无法下载源文件"
+            exit 1
+          fi
+
+          # 3. 拆分 IPv4 和 IPv6
+          # 排除包含冒号的行即为 IPv4
+          grep -v ":" temp_cn.list > ipv4.txt
+          # 包含冒号的行为 IPv6
+          grep ":" temp_cn.list > ipv6.txt
+
+          # 4. 清理临时文件
+          rm temp_cn.list
+          echo "处理完成：$(wc -l < ipv4.txt) 条 IPv4, $(wc -l < ipv6.txt) 条 IPv6。"
 
       - name: Commit and Push
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           
-          # 检查文件是否有变化
           git add ipv4.txt ipv6.txt
+          
+          # 只有在文件有变动时才提交
           if git diff --cached --quiet; then
-            echo "没有检测到变化，跳过提交。"
+            echo "文件无变化，跳过提交。"
           else
-            git commit -m "Update separated IPv4 and IPv6 lists [$(date +'%Y-%m-%d')]"
+            git commit -m "自动更新：拆分 IPv4 和 IPv6 列表 ($(date +'%Y-%m-%d'))"
             git push origin master
           fi
