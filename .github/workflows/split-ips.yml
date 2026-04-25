@@ -1,0 +1,48 @@
+name: Split CN IP List
+
+on:
+  workflow_dispatch: # 支持手动触发
+  schedule:
+    - cron: '0 0 * * *' # 每天 UTC 0点自动运行一次
+
+jobs:
+  split_ips:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 赋予推送代码的权限
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          ref: master # 使用你的 master 分支
+
+      - name: Process IP List
+        run: |
+          # 定义原始文件路径（Fork 后的相对路径）
+          SOURCE_FILE="geo/geoip/cn.list"
+          
+          # 确保目录存在
+          mkdir -p output/
+          
+          # 提取 IPv4 (不含冒号的行)
+          grep -v ":" "$SOURCE_FILE" > ipv4.txt
+          
+          # 提取 IPv6 (包含冒号的行)
+          grep ":" "$SOURCE_FILE" > ipv6.txt
+          
+          echo "拆分完成：ipv4.txt 和 ipv6.txt 已生成。"
+
+      - name: Commit and Push
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # 检查文件是否有变化
+          git add ipv4.txt ipv6.txt
+          if git diff --cached --quiet; then
+            echo "没有检测到变化，跳过提交。"
+          else
+            git commit -m "Update separated IPv4 and IPv6 lists [$(date +'%Y-%m-%d')]"
+            git push origin master
+          fi
